@@ -14,14 +14,23 @@ body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 "Atkinson Hype
 .wrap{max-width:1500px;margin:0 auto;padding:16px}
 h1{font-size:1.25rem;margin:0 0 4px}
 .sub{color:var(--muted);margin:0 0 14px}
-.controls,.res{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
+.controls,.res,.pairing{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
 .controls{margin-bottom:16px}
+.pairing{margin-bottom:16px}
+.pairing p{margin:8px 0}
+.pairing input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:12em;text-transform:uppercase}
+.pairing a{overflow-wrap:anywhere}
+body.phone .controls,body.phone .tvArea,body.phone .res,body.phone .sub,body.phone .hostOnly{display:none}
+body.phone .stage{grid-template-columns:1fr}
+body.phone .wrap{max-width:550px}
+body.phone .remoteArea{border:0}
 summary{font-weight:bold;cursor:pointer}
 summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:12px}
 .bar label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted);gap:3px}
 select,button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:7px 10px;cursor:pointer}
 button.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button:disabled{opacity:.55;cursor:not-allowed}
 button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .stage{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
 .panel{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
@@ -80,6 +89,27 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-
 <h1>AM TV Remote - Fold-Out Keyboard Remote: Text-Entry Prototype</h1>
 <p class="sub">Facilitator controls are above the TV. Participants use the remote to sign in to or search YouTube.</p>
 
+<section class="pairing" aria-labelledby="pairTitle">
+<h2 class="panelTitle" id="pairTitle">Phone connection</h2>
+<div class="hostOnly">
+<p>Use this device on its own, or connect a phone as the remote.</p>
+<button id="host" type="button">Start phone pairing</button>
+<div id="pairDetails" hidden>
+<p>Pairing code: <strong id="pairCode"></strong></p>
+<p>Open this link on the phone: <a id="pairLink"></a></p>
+<button id="copyLink" type="button">Copy phone link</button>
+<button id="disconnectPhone" type="button" hidden>Disconnect phone</button>
+</div>
+<form id="joinForm" class="bar">
+<label>Have a pairing code? <input id="joinCode" autocomplete="off" maxlength="10" required pattern="[A-Za-z0-9]{10}" placeholder="Enter code"></label>
+<button type="submit">Use this device as remote</button>
+</form>
+</div>
+<p id="pairStatus" role="status" aria-live="polite">Single-device mode. No phone connected.</p>
+<button id="reconnect" type="button" hidden>Reconnect</button>
+<a id="mainPage" hidden>Return to single-device mode</a>
+</section>
+
 <details class="controls">
 <summary>Condition and task</summary>
 <div class="bar">
@@ -111,6 +141,7 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-
 <button id="unf">Unfold keyboard</button>
 </div>
 <p class="note" id="gnote">Rotate and unfold stand in for physically turning the remote and opening the keyboard.</p>
+<p class="note" id="remoteFeedback" role="status" hidden></p>
 </section>
 </div>
 
@@ -127,6 +158,10 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-
 var ROWS=["1234567890","qwertyuiop","asdfghjkl@","zxcvbnm._-"];
 var TASKS=[{label:"Email",text:"grace.lee42@mail.com"},{label:"Search",text:"easy bread recipes"}];
 var S,runs=[],$=function(i){return document.getElementById(i)};
+var remoteCode=new URLSearchParams(location.search).get("remote"),phoneMode=remoteCode!==null;
+var peer=null,connection=null,peerLoading=null,phoneReady=false,orientationSent=false;
+var codePattern=/^[A-Z0-9]{10}$/,peerPrefix="am-tv-remote-";
+if(phoneMode){document.body.classList.add("phone");$("gnote").textContent="Turn your phone to rotate the remote, or use the button. Unfold the keyboard to type.";$("remoteFeedback").hidden=false;var mainUrl=new URL(location.href);mainUrl.searchParams.delete("remote");$("mainPage").href=mainUrl.href;$("mainPage").hidden=false}
 
 function fresh(){S={cond:$("cond").value,task:+$("task").value,screen:"home",f:0,opt:0,kr:0,kc:0,text:"",horiz:false,open:false,t0:0,tf:0,keys:0,bs:0,toast:""}}
 function reset(){fresh();$("target").textContent=TASKS[S.task].text;draw()}
@@ -149,8 +184,9 @@ if(showOsk()){h+='<div class="osk" aria-label="On-screen keyboard">'+oskRows().m
 }else{
 h='<h2>'+(T.label==="Email"?"Signed in":"Search submitted")+'</h2><div class="hint">'+S.text+'</div><div class="hint">Task complete. Thank you.</div>'
 }
-h+='<div class="toast">'+S.toast+'</div>';
+h+='<div class="toast"></div>';
 $("tv").innerHTML=h;
+$("tv").querySelector(".toast").textContent=S.toast;
 $("tv").className="tv"+(S.screen==="entry"&&showOsk()?" entry":"");
 $("remote").className="remote"+(S.horiz?" h":"");
 $("kb").className="kb"+(S.open?" open":"");
@@ -158,6 +194,8 @@ $("gest").style.display=S.cond==="A"?"flex":"none";
 $("gnote").style.display=S.cond==="A"?"block":"none";
 $("rot").textContent=S.horiz?"Rotate to vertical":"Rotate remote";
 $("unf").textContent=S.open?"Fold keyboard":"Unfold keyboard";
+if(phoneMode)$("remoteFeedback").textContent=S.toast;
+else if(connection&&connection.open)connection.send({type:"state",cond:S.cond,horiz:S.horiz,open:S.open,toast:S.toast});
 }
 
 function buildKb(){
@@ -211,18 +249,115 @@ S.screen="done";renderRuns();draw()}
 function renderRuns(){
 $("runs").innerHTML=runs.map(function(r){return '<tr><td>'+r.n+'</td><td>'+r.cond+'</td><td>'+r.task+'</td><td>'+r.disc+'</td><td>'+r.typ+'</td><td>'+r.tot+'</td><td>'+r.keys+'</td><td>'+r.bs+'</td><td>'+r.ok+'</td></tr>'}).join("")}
 
+function rotate(horizontal){S.horiz=horizontal;if(!S.horiz)S.open=false;draw()}
+function unfold(){if(!S.horiz){toast("Rotate the remote first.");return}S.open=!S.open;draw()}
+function action(type,value){
+if(phoneMode){
+if(!phoneReady||!connection||!connection.open){$("pairStatus").textContent="Not connected. Reconnect before using the remote.";return}
+connection.send({type:type,value:value});return
+}
+if(type==="direction")press(value);
+else if(type==="key"&&S.cond==="A"&&S.open)act(value);
+else if(type==="rotate"&&S.cond==="A")rotate(value);
+else if(type==="unfold"&&S.cond==="A")unfold();
+}
+
+function loadPeer(){
+if(window.Peer)return Promise.resolve();
+if(peerLoading)return peerLoading;
+peerLoading=new Promise(function(resolve,reject){
+var script=document.createElement("script");script.src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js";
+script.onload=function(){if(window.Peer)resolve();else reject(new Error("PeerJS did not load."))};
+script.onerror=function(){script.remove();reject(new Error("Could not load PeerJS. Check your internet connection."))};
+document.head.appendChild(script)
+}).catch(function(error){peerLoading=null;throw error});
+return peerLoading
+}
+function setPhoneReady(ready){phoneReady=ready;$("remote").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("kb").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("rot").disabled=!ready;$("unf").disabled=!ready}
+function randomCode(){
+var chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",bytes=new Uint8Array(10);
+crypto.getRandomValues(bytes);
+return Array.from(bytes,function(b){return chars[b%chars.length]}).join("")
+}
+function orientation(){return window.matchMedia("(orientation: landscape)").matches}
+function connectPhone(){
+setPhoneReady(false);orientationSent=false;$("reconnect").hidden=true;
+var oldConnection=connection,oldPeer=peer;connection=null;peer=null;
+if(oldConnection)oldConnection.close();
+if(oldPeer)oldPeer.destroy();
+if(!codePattern.test(remoteCode||"")){$("pairStatus").textContent="Invalid pairing code. Open the link again or enter a 10-character code on the main page.";$("reconnect").hidden=true;return}
+$("pairStatus").textContent="Connecting to the TV...";
+loadPeer().then(function(){
+var currentPeer=new Peer();peer=currentPeer;
+currentPeer.on("open",function(){
+if(peer!==currentPeer)return;
+var currentConnection=currentPeer.connect(peerPrefix+remoteCode,{reliable:true});connection=currentConnection;
+var timer=setTimeout(function(){if(connection===currentConnection&&!phoneReady){connection=null;currentConnection.close();$("pairStatus").textContent="Connection timed out. Check the code and network, then reconnect.";$("reconnect").hidden=false}},20000);
+currentConnection.on("open",function(){if(connection===currentConnection)$("pairStatus").textContent="Connected. Waiting for the TV..."});
+currentConnection.on("data",function(data){
+if(connection!==currentConnection)return;
+if(!data||data.type!=="state"||(data.cond!=="A"&&data.cond!=="B")||typeof data.horiz!=="boolean"||typeof data.open!=="boolean"||typeof data.toast!=="string")return;
+clearTimeout(timer);var previousCondition=S.cond;
+S.cond=data.cond;S.horiz=data.horiz;S.open=data.open;S.toast=data.toast;draw();
+setPhoneReady(true);$("pairStatus").textContent="Connected to the TV.";
+if(!orientationSent||previousCondition!=="A"&&S.cond==="A"){orientationSent=true;if(S.cond==="A")action("rotate",orientation())}
+});
+currentConnection.on("close",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;setPhoneReady(false);$("pairStatus").textContent="Disconnected from the TV. Reconnect to continue.";$("reconnect").hidden=false});
+currentConnection.on("error",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;currentConnection.close();$("pairStatus").textContent="Connection failed. Reconnect to try again.";setPhoneReady(false);$("reconnect").hidden=false});
+});
+currentPeer.on("error",function(error){if(peer!==currentPeer)return;setPhoneReady(false);$("pairStatus").textContent="Connection failed: "+error.message+" Reconnect to try again.";$("reconnect").hidden=false});
+currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;if(connection&&connection.open){$("pairStatus").textContent="Connected, but pairing service disconnected. If the connection drops, reconnect."}else{$("pairStatus").textContent="Pairing service disconnected. Reconnect to try again.";$("reconnect").hidden=false}});
+}).catch(function(error){$("pairStatus").textContent=error.message;$("reconnect").hidden=false})
+}
+function startHost(){
+$("host").disabled=true;$("pairStatus").textContent="Starting phone pairing...";
+loadPeer().then(function(){
+var code=randomCode(),currentPeer=new Peer(peerPrefix+code);peer=currentPeer;
+currentPeer.on("open",function(){
+if(peer!==currentPeer)return;
+var url=new URL(location.href);url.searchParams.set("remote",code);url.hash="";
+$("pairCode").textContent=code;$("pairLink").href=url.href;$("pairLink").textContent=url.href;
+$("pairDetails").hidden=false;$("pairStatus").textContent="Waiting for a phone to connect."
+});
+currentPeer.on("connection",function(incoming){
+if(peer!==currentPeer){incoming.close();return}
+if(connection){incoming.on("open",function(){incoming.close()});return}
+connection=incoming;
+var timer=setTimeout(function(){if(connection===incoming&&!incoming.open){connection=null;incoming.close();$("pairStatus").textContent="Phone connection timed out. Waiting for a phone to reconnect."}},20000);
+incoming.on("open",function(){clearTimeout(timer);if(connection!==incoming)return;$("disconnectPhone").hidden=false;$("pairStatus").textContent="Phone connected.";draw()});
+incoming.on("data",function(data){
+if(connection!==incoming||!incoming.open||!data||typeof data!=="object")return;
+if(data.type==="direction"&&["up","down","left","right","ok","back"].includes(data.value))action("direction",data.value);
+else if(data.type==="key"&&typeof data.value==="string"&&(/^[a-z0-9@._ -]$/.test(data.value)||data.value==="BS"||data.value==="DONE"))action("key",data.value);
+else if(data.type==="rotate"&&typeof data.value==="boolean")action("rotate",data.value);
+else if(data.type==="unfold")action("unfold");
+});
+incoming.on("close",function(){clearTimeout(timer);if(connection===incoming){connection=null;$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone disconnected. Waiting for a phone to reconnect."}});
+incoming.on("error",function(){clearTimeout(timer);if(connection===incoming){connection=null;incoming.close();$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone connection failed. Waiting for a phone to reconnect."}});
+});
+currentPeer.on("error",function(error){if(peer!==currentPeer)return;$("pairStatus").textContent="Pairing error: "+error.message+". Restart pairing if needed. Single-device mode is still available.";$("host").disabled=false;if(currentPeer.destroyed)$("pairDetails").hidden=true});
+currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;$("pairStatus").textContent="Pairing service disconnected. Restart pairing if the phone cannot connect.";$("host").disabled=false});
+}).catch(function(error){$("pairStatus").textContent=error.message+" Single-device mode is still available.";$("host").disabled=false})
+}
+$("host").onclick=function(){if(peer){var oldPeer=peer;peer=null;connection=null;oldPeer.destroy();$("pairDetails").hidden=true;$("disconnectPhone").hidden=true}startHost()};
+$("disconnectPhone").onclick=function(){if(connection){var oldConnection=connection;connection=null;oldConnection.close()}$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone disconnected. Waiting for a phone to reconnect."};
+$("reconnect").onclick=connectPhone;
+$("joinForm").onsubmit=function(e){e.preventDefault();var code=$("joinCode").value.trim().toUpperCase();if(!codePattern.test(code)){$("pairStatus").textContent="Enter the 10-character pairing code.";return}var url=new URL(location.href);url.searchParams.set("remote",code);location.href=url.href};
+$("copyLink").onclick=function(){if(!navigator.clipboard){$("pairStatus").textContent="Could not copy the link. Select it and copy it manually.";return}navigator.clipboard.writeText($("pairLink").href).then(function(){$("pairStatus").textContent="Phone link copied."},function(){$("pairStatus").textContent="Could not copy the link. Select it and copy it manually."})};
+window.matchMedia("(orientation: landscape)").addEventListener("change",function(e){if(phoneMode&&phoneReady&&S.cond==="A")action("rotate",e.matches)});
+
 document.addEventListener("click",function(e){
 var b=e.target.closest("button");if(!b)return;
-if(b.dataset.d)press(b.dataset.d);
-else if(b.dataset.k){if(S.cond==="A"&&S.open)act(b.dataset.k)}
+if(b.dataset.d)action("direction",b.dataset.d);
+else if(b.dataset.k){if(S.cond==="A"&&S.open)action("key",b.dataset.k)}
 else if(b.dataset.oskRow!==undefined&&S.screen==="entry"&&showOsk()){
 S.kr=+b.dataset.oskRow;S.kc=+b.dataset.oskCol;selectOskKey(oskRows()[S.kr][S.kc]);
 if(e.detail===0&&S.screen==="entry")$("tv").querySelector('[data-osk-row="'+S.kr+'"][data-osk-col="'+S.kc+'"]').focus();
 return}
 b.blur()});
 
-$("rot").onclick=function(){S.horiz=!S.horiz;if(!S.horiz)S.open=false;draw()};
-$("unf").onclick=function(){if(!S.horiz){toast("Rotate the remote first.");return}S.open=!S.open;draw()};
+$("rot").onclick=function(){action("rotate",!S.horiz)};
+$("unf").onclick=function(){action("unfold")};
 $("reset").onclick=reset;
 $("cond").onchange=reset;$("task").onchange=reset;
 $("csv").onclick=function(){
@@ -230,14 +365,14 @@ var t="n,condition,task,time_to_first_key_s,typing_s,total_s,keystrokes,backspac
 try{navigator.clipboard.writeText(t).then(function(){$("csvmsg").textContent="Copied."},function(){$("csvmsg").textContent="Copy blocked. Select the table instead."})}catch(e){$("csvmsg").textContent="Copy blocked. Select the table instead."}};
 
 document.addEventListener("keydown",function(e){
-if(e.target.closest("button,select,summary")||e.metaKey||e.ctrlKey||e.altKey)return;
-if(S.cond==="A"&&S.screen==="entry"&&S.open){
-if(e.key==="Backspace"){e.preventDefault();act("BS")}
-else if(e.key==="Enter"){e.preventDefault();act("DONE")}
-else if(e.key.length===1&&/[a-z0-9@._\- ]/i.test(e.key)){e.preventDefault();act(e.key.toLowerCase())}
+if(e.target.closest("button,input,textarea,select,summary")||e.metaKey||e.ctrlKey||e.altKey)return;
+if(S.cond==="A"&&(phoneMode||S.screen==="entry")&&S.open){
+if(e.key==="Backspace"){e.preventDefault();action("key","BS")}
+else if(e.key==="Enter"){e.preventDefault();action("key","DONE")}
+else if(e.key.length===1&&/[a-z0-9@._\- ]/i.test(e.key)){e.preventDefault();action("key",e.key.toLowerCase())}
 }});
 
-buildKb();reset();
+buildKb();reset();if(phoneMode)connectPhone();
 </script>
 </body>
 </html>
