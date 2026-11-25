@@ -24,6 +24,17 @@ body.phone .controls,body.phone .tvArea,body.phone .res,body.phone .sub,body.pho
 body.phone .stage{grid-template-columns:1fr}
 body.phone .wrap{max-width:550px}
 body.phone .remoteArea{border:0}
+body.phone.connected .pairing{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:1000;overflow-y:auto;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+body.phone.connected .pairingContent{display:none}
+body.phone.connected .remote{max-width:100%;width:min(100vw,100vh);height:auto;aspect-ratio:210/500}
+body.phone.connected .remoteArea{max-width:100%;width:100%;height:100%;align-items:center;justify-content:center;container-type:normal}
+body.phone.connected .gest{position:fixed;bottom:16px;left:16px;right:16px;gap:4px;flex-wrap:nowrap}
+body.phone.connected .gest button{font-size:.85rem;padding:6px 10px;flex:1}
+body.phone.connected .remote.h{width:min(100vw,100vh);aspect-ratio:500/210}
+body.phone.connected .dpad{transform:none}
+body.phone.connected .remote.h .dpad{transform:rotate(90deg)}
+body.phone.connected #mainPage{position:fixed;top:4px;left:4px;font-size:.75rem;text-decoration:none;color:var(--accent);background:transparent;border:0;padding:3px 6px}
+#connStatus{font-size:.85rem;color:var(--muted);text-align:center;line-height:1.3;padding:12px 0;min-width:200px}
 summary{font-weight:bold;cursor:pointer}
 summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:12px}
@@ -91,7 +102,7 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-
 
 <section class="pairing" aria-labelledby="pairTitle">
 <h2 class="panelTitle" id="pairTitle">Phone connection</h2>
-<div class="hostOnly">
+<div class="hostOnly pairingContent">
 <p>Use this device on its own, or connect a phone as the remote.</p>
 <button id="host" type="button">Start phone pairing</button>
 <div id="pairDetails" hidden>
@@ -105,7 +116,7 @@ th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-
 <button type="submit">Use this device as remote</button>
 </form>
 </div>
-<p id="pairStatus" role="status" aria-live="polite">Single-device mode. No phone connected.</p>
+<div id="connStatus" role="status" aria-live="polite"><p>Single-device mode. No phone connected.</p></div>
 <button id="reconnect" type="button" hidden>Reconnect</button>
 <a id="mainPage" hidden>Return to single-device mode</a>
 </section>
@@ -194,6 +205,8 @@ $("gest").style.display=S.cond==="A"?"flex":"none";
 $("gnote").style.display=S.cond==="A"?"block":"none";
 $("rot").textContent=S.horiz?"Rotate to vertical":"Rotate remote";
 $("unf").textContent=S.open?"Fold keyboard":"Unfold keyboard";
+if(phoneMode&&phoneReady)document.body.classList.add("connected");
+if(phoneMode&&!phoneReady)document.body.classList.remove("connected");
 if(phoneMode)$("remoteFeedback").textContent=S.toast;
 else if(connection&&connection.open)connection.send({type:"state",cond:S.cond,horiz:S.horiz,open:S.open,toast:S.toast});
 }
@@ -253,7 +266,7 @@ function rotate(horizontal){S.horiz=horizontal;if(!S.horiz)S.open=false;draw()}
 function unfold(){if(!S.horiz){toast("Rotate the remote first.");return}S.open=!S.open;draw()}
 function action(type,value){
 if(phoneMode){
-if(!phoneReady||!connection||!connection.open){$("pairStatus").textContent="Not connected. Reconnect before using the remote.";return}
+if(!phoneReady||!connection||!connection.open){toast("Not connected. Reconnect before using the remote.");return}
 connection.send({type:type,value:value});return
 }
 if(type==="direction")press(value);
@@ -273,7 +286,7 @@ document.head.appendChild(script)
 }).catch(function(error){peerLoading=null;throw error});
 return peerLoading
 }
-function setPhoneReady(ready){phoneReady=ready;$("remote").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("kb").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("rot").disabled=!ready;$("unf").disabled=!ready}
+function setPhoneReady(ready){phoneReady=ready;$("remote").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("kb").querySelectorAll("button").forEach(function(b){b.disabled=!ready});$("rot").disabled=!ready;$("unf").disabled=!ready;updateConnStatus();if(ready)document.body.classList.add("connected")}
 function randomCode(){
 var chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",bytes=new Uint8Array(10);
 crypto.getRandomValues(bytes);
@@ -285,46 +298,46 @@ setPhoneReady(false);orientationSent=false;$("reconnect").hidden=true;
 var oldConnection=connection,oldPeer=peer;connection=null;peer=null;
 if(oldConnection)oldConnection.close();
 if(oldPeer)oldPeer.destroy();
-if(!codePattern.test(remoteCode||"")){$("pairStatus").textContent="Invalid pairing code. Open the link again or enter a 10-character code on the main page.";$("reconnect").hidden=true;return}
-$("pairStatus").textContent="Connecting to the TV...";
+if(!codePattern.test(remoteCode||"")){$("connStatus").innerHTML='<p>Invalid pairing code. Open the link again or enter a 10-character code on the main page.</p>';$("reconnect").hidden=true;return}
+var statusMsg='<p>Connecting to the TV...</p>';$("connStatus").innerHTML=statusMsg;
 loadPeer().then(function(){
 var currentPeer=new Peer();peer=currentPeer;
 currentPeer.on("open",function(){
 if(peer!==currentPeer)return;
 var currentConnection=currentPeer.connect(peerPrefix+remoteCode,{reliable:true});connection=currentConnection;
-var timer=setTimeout(function(){if(connection===currentConnection&&!phoneReady){connection=null;currentConnection.close();$("pairStatus").textContent="Connection timed out. Check the code and network, then reconnect.";$("reconnect").hidden=false}},20000);
-currentConnection.on("open",function(){if(connection===currentConnection)$("pairStatus").textContent="Connected. Waiting for the TV..."});
+var timer=setTimeout(function(){if(connection===currentConnection&&!phoneReady){connection=null;currentConnection.close();$("connStatus").innerHTML='<p>Connection timed out. Check the code and network, then reconnect.</p>';$("reconnect").hidden=false}},20000);
+currentConnection.on("open",function(){if(connection===currentConnection)$("connStatus").innerHTML='<p>Connected. Waiting for the TV...</p>'});
 currentConnection.on("data",function(data){
 if(connection!==currentConnection)return;
 if(!data||data.type!=="state"||(data.cond!=="A"&&data.cond!=="B")||typeof data.horiz!=="boolean"||typeof data.open!=="boolean"||typeof data.toast!=="string")return;
 clearTimeout(timer);var previousCondition=S.cond;
 S.cond=data.cond;S.horiz=data.horiz;S.open=data.open;S.toast=data.toast;draw();
-setPhoneReady(true);$("pairStatus").textContent="Connected to the TV.";
+setPhoneReady(true);
 if(!orientationSent||previousCondition!=="A"&&S.cond==="A"){orientationSent=true;if(S.cond==="A")action("rotate",orientation())}
 });
-currentConnection.on("close",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;setPhoneReady(false);$("pairStatus").textContent="Disconnected from the TV. Reconnect to continue.";$("reconnect").hidden=false});
-currentConnection.on("error",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;currentConnection.close();$("pairStatus").textContent="Connection failed. Reconnect to try again.";setPhoneReady(false);$("reconnect").hidden=false});
+currentConnection.on("close",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;setPhoneReady(false);updateConnStatus();$("reconnect").hidden=false});
+currentConnection.on("error",function(){clearTimeout(timer);if(connection!==currentConnection)return;connection=null;currentConnection.close();setPhoneReady(false);updateConnStatus();$("reconnect").hidden=false});
 });
-currentPeer.on("error",function(error){if(peer!==currentPeer)return;setPhoneReady(false);$("pairStatus").textContent="Connection failed: "+error.message+" Reconnect to try again.";$("reconnect").hidden=false});
-currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;if(connection&&connection.open){$("pairStatus").textContent="Connected, but pairing service disconnected. If the connection drops, reconnect."}else{$("pairStatus").textContent="Pairing service disconnected. Reconnect to try again.";$("reconnect").hidden=false}});
-}).catch(function(error){$("pairStatus").textContent=error.message;$("reconnect").hidden=false})
+currentPeer.on("error",function(error){if(peer!==currentPeer)return;setPhoneReady(false);updateConnStatus();$("reconnect").hidden=false});
+currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;if(connection&&connection.open){}else{updateConnStatus();$("reconnect").hidden=false}});
+}).catch(function(error){$("connStatus").innerHTML='<p>'+error.message+'</p>';$("reconnect").hidden=false})
 }
 function startHost(){
-$("host").disabled=true;$("pairStatus").textContent="Starting phone pairing...";
+$("host").disabled=true;$("connStatus").innerHTML='<p>Starting phone pairing...</p>';
 loadPeer().then(function(){
 var code=randomCode(),currentPeer=new Peer(peerPrefix+code);peer=currentPeer;
 currentPeer.on("open",function(){
 if(peer!==currentPeer)return;
 var url=new URL(location.href);url.searchParams.set("remote",code);url.hash="";
 $("pairCode").textContent=code;$("pairLink").href=url.href;$("pairLink").textContent=url.href;
-$("pairDetails").hidden=false;$("pairStatus").textContent="Waiting for a phone to connect."
+$("pairDetails").hidden=false;$("connStatus").innerHTML='<p>Waiting for a phone to connect.</p>'
 });
 currentPeer.on("connection",function(incoming){
 if(peer!==currentPeer){incoming.close();return}
 if(connection){incoming.on("open",function(){incoming.close()});return}
 connection=incoming;
-var timer=setTimeout(function(){if(connection===incoming&&!incoming.open){connection=null;incoming.close();$("pairStatus").textContent="Phone connection timed out. Waiting for a phone to reconnect."}},20000);
-incoming.on("open",function(){clearTimeout(timer);if(connection!==incoming)return;$("disconnectPhone").hidden=false;$("pairStatus").textContent="Phone connected.";draw()});
+var timer=setTimeout(function(){if(connection===incoming&&!incoming.open){connection=null;incoming.close();$("connStatus").innerHTML='<p>Phone connection timed out. Waiting for a phone to reconnect.</p>'}},20000);
+incoming.on("open",function(){clearTimeout(timer);if(connection!==incoming)return;$("disconnectPhone").hidden=false;draw()});
 incoming.on("data",function(data){
 if(connection!==incoming||!incoming.open||!data||typeof data!=="object")return;
 if(data.type==="direction"&&["up","down","left","right","ok","back"].includes(data.value))action("direction",data.value);
@@ -332,18 +345,32 @@ else if(data.type==="key"&&typeof data.value==="string"&&(/^[a-z0-9@._ -]$/.test
 else if(data.type==="rotate"&&typeof data.value==="boolean")action("rotate",data.value);
 else if(data.type==="unfold")action("unfold");
 });
-incoming.on("close",function(){clearTimeout(timer);if(connection===incoming){connection=null;$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone disconnected. Waiting for a phone to reconnect."}});
-incoming.on("error",function(){clearTimeout(timer);if(connection===incoming){connection=null;incoming.close();$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone connection failed. Waiting for a phone to reconnect."}});
+incoming.on("close",function(){clearTimeout(timer);if(connection===incoming){connection=null;$("disconnectPhone").hidden=true;updateConnStatus()}});
+incoming.on("error",function(){clearTimeout(timer);if(connection===incoming){connection=null;incoming.close();$("disconnectPhone").hidden=true;updateConnStatus()}});
 });
-currentPeer.on("error",function(error){if(peer!==currentPeer)return;$("pairStatus").textContent="Pairing error: "+error.message+". Restart pairing if needed. Single-device mode is still available.";$("host").disabled=false;if(currentPeer.destroyed)$("pairDetails").hidden=true});
-currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;$("pairStatus").textContent="Pairing service disconnected. Restart pairing if the phone cannot connect.";$("host").disabled=false});
-}).catch(function(error){$("pairStatus").textContent=error.message+" Single-device mode is still available.";$("host").disabled=false})
+currentPeer.on("error",function(error){if(peer!==currentPeer)return;setPhoneReady(false);updateConnStatus();$("reconnect").hidden=false});
+currentPeer.on("disconnected",function(){if(peer!==currentPeer)return;updateConnStatus();if(connection&&!connection.open){}});
+}).catch(function(error){updateConnStatus();$("host").disabled=false})
 }
-$("host").onclick=function(){if(peer){var oldPeer=peer;peer=null;connection=null;oldPeer.destroy();$("pairDetails").hidden=true;$("disconnectPhone").hidden=true}startHost()};
-$("disconnectPhone").onclick=function(){if(connection){var oldConnection=connection;connection=null;oldConnection.close()}$("disconnectPhone").hidden=true;$("pairStatus").textContent="Phone disconnected. Waiting for a phone to reconnect."};
-$("reconnect").onclick=connectPhone;
-$("joinForm").onsubmit=function(e){e.preventDefault();var code=$("joinCode").value.trim().toUpperCase();if(!codePattern.test(code)){$("pairStatus").textContent="Enter the 10-character pairing code.";return}var url=new URL(location.href);url.searchParams.set("remote",code);location.href=url.href};
-$("copyLink").onclick=function(){if(!navigator.clipboard){$("pairStatus").textContent="Could not copy the link. Select it and copy it manually.";return}navigator.clipboard.writeText($("pairLink").href).then(function(){$("pairStatus").textContent="Phone link copied."},function(){$("pairStatus").textContent="Could not copy the link. Select it and copy it manually."})};
+$("host").onclick=function(){if(peer){var oldPeer=peer;peer=null;connection=null;document.body.classList.remove("connected");oldPeer.destroy();$("pairDetails").hidden=true;$("disconnectPhone").hidden=true;updateConnStatus()}startHost()};
+$("disconnectPhone").onclick=function(){if(connection){var oldConnection=connection;connection=null;oldConnection.close()}$("disconnectPhone").hidden=true;document.body.classList.remove("connected");updateConnStatus()};
+var connStatusEl=$("connStatus");
+$("reconnect").onclick=function(){document.body.classList.remove("connected");connectPhone()};
+function updateConnStatus(){
+if(!phoneMode)return;
+var html='<p>';
+if(!phoneReady){
+if(!connection)html+='Connecting to the TV...'
+else if(!connection.open)html+='Connected to signal service, completing connection...'
+else html+='Waiting for the TV to respond...'}
+else html+='Connected to the TV';
+html+='</p>';if(!phoneReady){html+='<p style="font-size:.8em;margin-top:4px"><button id="quickReconnect" style="font-size:inherit;padding:3px 6px">Reconnect</button></p>'}
+connStatusEl.innerHTML=html;
+if(document.querySelector('#quickReconnect'))document.querySelector('#quickReconnect').onclick=function(){document.body.classList.remove("connected");connectPhone()}
+}
+updateConnStatus();
+$("joinForm").onsubmit=function(e){e.preventDefault();var code=$("joinCode").value.trim().toUpperCase();if(!codePattern.test(code)){$("connStatus").innerHTML='<p>Enter the 10-character pairing code.</p>';return}var url=new URL(location.href);url.searchParams.set("remote",code);location.href=url.href};
+$("copyLink").onclick=function(){if(!navigator.clipboard){$("connStatus").innerHTML='<p>Could not copy the link. Select it and copy it manually.</p>';return}navigator.clipboard.writeText($("pairLink").href).then(function(){$("connStatus").innerHTML='<p>Phone link copied.</p>'},function(){$("connStatus").innerHTML='<p>Could not copy the link. Select it and copy it manually.</p>'})};
 window.matchMedia("(orientation: landscape)").addEventListener("change",function(e){if(phoneMode&&phoneReady&&S.cond==="A")action("rotate",e.matches)});
 
 document.addEventListener("click",function(e){
