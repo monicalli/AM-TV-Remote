@@ -25,22 +25,13 @@ body.phone .stage{grid-template-columns:1fr}
 body.phone .wrap{max-width:550px}
 body.phone .remoteArea{border:0}
 body.phone.connected .pairing{display:none}
-body.phone.connected .stage{height:100vh;overflow:hidden}
-body.phone.connected .wrap{height:100%;display:flex;flex-direction:column;max-width:100%;padding:0;margin:0}
-body.phone.connected .remoteArea{width:100%;height:100%;max-width:100%;padding:0;border:0;flex:1;display:flex;align-items:center;justify-content:center}
-body.phone.connected .remote{width:min(85vw,85vh);height:min(85vw,85vh);aspect-ratio:1;padding:max(8px,2vh);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:max(8px,2vh);flex-shrink:0}
-body.phone.connected .dpad{grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:max(4px,1vh);width:60%;aspect-ratio:1;display:grid}
-body.phone.connected .rb{font-size:clamp(1rem,4vh,2rem);padding:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
-body.phone.connected .rb.ok{font-size:clamp(.8rem,3vh,1.5rem)}
-body.phone.connected .rb.back{width:clamp(60px,20vh,100px);height:clamp(30px,8vh,50px);font-size:clamp(.8rem,2vh,1rem);flex-shrink:0}
-body.phone.connected .remote.h{flex-direction:row}
+body.phone.connected .remote{max-width:100%;width:min(100vw,100vh);height:auto;aspect-ratio:210/500}
+body.phone.connected .remoteArea{max-width:100%;width:100%;height:100%;align-items:center;justify-content:center;container-type:normal}
+body.phone.connected .gest{position:fixed;bottom:16px;left:16px;right:16px;gap:4px;flex-wrap:nowrap}
+body.phone.connected .gest button{font-size:.85rem;padding:6px 10px;flex:1}
+body.phone.connected .remote.h{width:min(100vw,100vh);aspect-ratio:500/210}
+body.phone.connected .dpad{transform:none}
 body.phone.connected .remote.h .dpad{transform:rotate(90deg)}
-body.phone.connected .kb{position:fixed;bottom:0;left:0;right:0;top:0;max-height:100vh;background:var(--bg);z-index:999;overflow-y:auto;padding:max(8px,1.5vh);display:none;flex-direction:column}
-body.phone.connected .kb.open{display:flex}
-body.phone.connected .kb button{font-size:clamp(.9rem,2vh,1.1rem);padding:max(6px,1vh);border-radius:4px}
-body.phone.connected .kb div{gap:max(2px,0.5vh)}
-body.phone.connected .gest{position:fixed;bottom:max(8px,1.5vh);left:max(8px,1.5vw);right:max(8px,1.5vw);gap:max(4px,1vh);flex-wrap:nowrap;height:auto;display:flex}
-body.phone.connected .gest button{font-size:clamp(.7rem,1.8vh,.85rem);padding:max(4px,0.8vh);flex:1}
 body.phone.connected #mainPage{position:fixed;top:4px;left:4px;font-size:.75rem;text-decoration:none;color:var(--accent);background:transparent;border:0;padding:3px 6px}
 #connStatus{font-size:.85rem;color:var(--muted);text-align:center;line-height:1.3;padding:12px 0;min-width:200px}
 summary{font-weight:bold;cursor:pointer}
@@ -180,8 +171,7 @@ var S,runs=[],$=function(i){return document.getElementById(i)};
 var remoteCode=new URLSearchParams(location.search).get("remote"),phoneMode=remoteCode!==null;
 var peer=null,connection=null,peerLoading=null,phoneReady=false,orientationSent=false;
 var codePattern=/^[A-Z0-9]{10}$/,peerPrefix="am-tv-remote-";
-var phoneViewMode="vertical";
-if(phoneMode){document.body.classList.add("phone");$("gnote").textContent="Rotate your phone to adjust the remote, or use the buttons. Press Unfold to see the keyboard.";var mainUrl=new URL(location.href);mainUrl.searchParams.delete("remote");$("mainPage").href=mainUrl.href;$("mainPage").hidden=false}
+if(phoneMode){document.body.classList.add("phone");$("gnote").textContent="Turn your phone to rotate the remote, or use the button. Unfold the keyboard to type.";$("remoteFeedback").hidden=false;var mainUrl=new URL(location.href);mainUrl.searchParams.delete("remote");$("mainPage").href=mainUrl.href;$("mainPage").hidden=false}
 
 function fresh(){S={cond:$("cond").value,task:+$("task").value,screen:"home",f:0,opt:0,kr:0,kc:0,text:"",horiz:false,open:false,t0:0,tf:0,keys:0,bs:0,toast:""}}
 function reset(){fresh();$("target").textContent=TASKS[S.task].text;draw()}
@@ -208,19 +198,12 @@ h+='<div class="toast"></div>';
 $("tv").innerHTML=h;
 $("tv").querySelector(".toast").textContent=S.toast;
 $("tv").className="tv"+(S.screen==="entry"&&showOsk()?" entry":"");
-if(phoneMode){
-$("remote").className="remote"+(phoneViewMode==="horizontal"?" h":"");
-$("kb").style.display=phoneViewMode==="keyboard"?"flex":"none";
-$("gest").style.display="flex";
-$("rot").textContent=phoneViewMode==="horizontal"?"Rotate to vertical":"Rotate to horizontal";
-$("unf").textContent=phoneViewMode==="keyboard"?"Show remote":"Show keyboard"}
-else{
 $("remote").className="remote"+(S.horiz?" h":"");
 $("kb").className="kb"+(S.open?" open":"");
 $("gest").style.display=S.cond==="A"?"flex":"none";
 $("gnote").style.display=S.cond==="A"?"block":"none";
 $("rot").textContent=S.horiz?"Rotate to vertical":"Rotate remote";
-$("unf").textContent=S.open?"Fold keyboard":"Unfold keyboard"}
+$("unf").textContent=S.open?"Fold keyboard":"Unfold keyboard";
 if(phoneMode&&phoneReady)document.body.classList.add("connected");
 if(phoneMode&&!phoneReady)document.body.classList.remove("connected");
 if(phoneMode)$("remoteFeedback").textContent=S.toast;
@@ -278,19 +261,8 @@ S.screen="done";renderRuns();draw()}
 function renderRuns(){
 $("runs").innerHTML=runs.map(function(r){return '<tr><td>'+r.n+'</td><td>'+r.cond+'</td><td>'+r.task+'</td><td>'+r.disc+'</td><td>'+r.typ+'</td><td>'+r.tot+'</td><td>'+r.keys+'</td><td>'+r.bs+'</td><td>'+r.ok+'</td></tr>'}).join("")}
 
-function rotate(horizontal){
-if(phoneMode){
-if(horizontal)phoneViewMode="horizontal";else phoneViewMode="vertical";
-S.horiz=false;S.open=false}
-else{S.horiz=horizontal;if(!S.horiz)S.open=false}
-draw()}
-
-function unfold(){
-if(phoneMode){
-if(phoneViewMode==="keyboard")phoneViewMode="vertical";else phoneViewMode="keyboard";
-S.horiz=false;S.open=false}
-else{if(!S.horiz){toast("Rotate the remote first.");return}S.open=!S.open}
-draw()}
+function rotate(horizontal){S.horiz=horizontal;if(!S.horiz)S.open=false;draw()}
+function unfold(){if(!S.horiz){toast("Rotate the remote first.");return}S.open=!S.open;draw()}
 function action(type,value){
 if(phoneMode){
 if(!phoneReady||!connection||!connection.open){toast("Not connected. Reconnect before using the remote.");return}
@@ -398,7 +370,7 @@ if(document.querySelector('#quickReconnect'))document.querySelector('#quickRecon
 updateConnStatus();
 $("joinForm").onsubmit=function(e){e.preventDefault();var code=$("joinCode").value.trim().toUpperCase();if(!codePattern.test(code)){$("connStatus").innerHTML='<p>Enter the 10-character pairing code.</p>';return}var url=new URL(location.href);url.searchParams.set("remote",code);location.href=url.href};
 $("copyLink").onclick=function(){if(!navigator.clipboard){$("connStatus").innerHTML='<p>Could not copy the link. Select it and copy it manually.</p>';return}navigator.clipboard.writeText($("pairLink").href).then(function(){$("connStatus").innerHTML='<p>Phone link copied.</p>'},function(){$("connStatus").innerHTML='<p>Could not copy the link. Select it and copy it manually.</p>'})};
-window.matchMedia("(orientation: landscape)").addEventListener("change",function(e){if(phoneMode&&phoneReady&&S.cond==="A"){phoneViewMode=e.matches?"horizontal":"vertical";draw()}});
+window.matchMedia("(orientation: landscape)").addEventListener("change",function(e){if(phoneMode&&phoneReady&&S.cond==="A")action("rotate",e.matches)});
 
 document.addEventListener("click",function(e){
 var b=e.target.closest("button");if(!b)return;
@@ -410,9 +382,7 @@ if(e.detail===0&&S.screen==="entry")$("tv").querySelector('[data-osk-row="'+S.kr
 return}
 b.blur()});
 
-$("rot").onclick=function(){
-if(phoneMode)action("rotate",phoneViewMode==="horizontal"?false:true);
-else action("rotate",!S.horiz)};
+$("rot").onclick=function(){action("rotate",!S.horiz)};
 $("unf").onclick=function(){action("unfold")};
 $("reset").onclick=reset;
 $("cond").onchange=reset;$("task").onchange=reset;
